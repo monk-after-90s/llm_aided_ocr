@@ -218,13 +218,12 @@ def approximate_tokens(text: str) -> int:
 
 def chunk_text(text: str, max_chunk_tokens: int, model_name: str) -> List[str]:
     chunks = []
-    tokenizer = get_tokenizer(model_name)
     sentences = re.split(r'(?<=[.!?])\s+', text)
     current_chunk = []
     current_chunk_tokens = 0
 
     for sentence in sentences:
-        sentence_tokens = len(tokenizer.encode(sentence))
+        sentence_tokens = estimate_tokens(sentence, model_name)
         if current_chunk_tokens + sentence_tokens > max_chunk_tokens:
             chunks.append(' '.join(current_chunk))
             current_chunk = [sentence]
@@ -236,7 +235,7 @@ def chunk_text(text: str, max_chunk_tokens: int, model_name: str) -> List[str]:
     if current_chunk:
         chunks.append(' '.join(current_chunk))
 
-    adjusted_chunks = adjust_overlaps(chunks, tokenizer, max_chunk_tokens)
+    adjusted_chunks = adjust_overlaps(chunks, model_name, max_chunk_tokens)
     return adjusted_chunks
 
 
@@ -245,10 +244,9 @@ def split_long_sentence(sentence: str, max_tokens: int, model_name: str) -> List
     chunks = []
     current_chunk = []
     current_chunk_tokens = 0
-    tokenizer = get_tokenizer(model_name)
 
     for word in words:
-        word_tokens = len(tokenizer.encode(word))
+        word_tokens = estimate_tokens(word, model_name)
         if current_chunk_tokens + word_tokens > max_tokens and current_chunk:
             chunks.append(' '.join(current_chunk))
             current_chunk = [word]
@@ -263,14 +261,14 @@ def split_long_sentence(sentence: str, max_tokens: int, model_name: str) -> List
     return chunks
 
 
-def adjust_overlaps(chunks: List[str], tokenizer, max_chunk_tokens: int, overlap_size: int = 50) -> List[str]:
+def adjust_overlaps(chunks: List[str], model_name, max_chunk_tokens: int, overlap_size: int = 50) -> List[str]:
     adjusted_chunks = []
     for i in range(len(chunks)):
         if i == 0:
             adjusted_chunks.append(chunks[i])
         else:
-            overlap_tokens = len(tokenizer.encode(' '.join(chunks[i - 1].split()[-overlap_size:])))
-            current_tokens = len(tokenizer.encode(chunks[i]))
+            overlap_tokens = estimate_tokens(' '.join(chunks[i - 1].split()[-overlap_size:]), model_name)
+            current_tokens = estimate_tokens(chunks[i], model_name)
             if overlap_tokens + current_tokens > max_chunk_tokens:
                 overlap_adjusted = chunks[i].split()[:-overlap_size]
                 adjusted_chunks.append(' '.join(overlap_adjusted))
@@ -342,7 +340,7 @@ async def generate_completion_from_openai(prompt: str, max_tokens: int = 5000) -
                 response = await openai_client.chat.completions.create(
                     model=OPENAI_COMPLETION_MODEL,
                     messages=[{"role": "user", "content": chunk}],
-                    max_tokens=adjusted_max_tokens,
+                    max_tokens=4096,
                     temperature=0.7,
                 )
                 result = response.choices[0].message.content
